@@ -5,11 +5,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 
 	_ "github.com/lib/pq"
+	coinApi "github.com/miguelmota/go-coinmarketcap"
 )
 
-func main() {
+type byMarketCap []coinApi.Coin
+
+func (a byMarketCap) Len() int           { return len(a) }
+func (a byMarketCap) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byMarketCap) Less(i, j int) bool { return a[i].MarketCapUsd < a[j].MarketCapUsd }
+
+func getPGConnection() (*sql.DB, error) {
 	connStr := fmt.Sprintf(
 		"postgres://%s:%s@localhost/shaoz?sslmode=disable",
 		os.Getenv("PG_USER"),
@@ -18,10 +26,35 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rows, err := db.Exec("CREATE TABLE test(id integer);")
-	fmt.Println(rows, err)
+	return db, err
+}
+
+func getCoinsByMarketCap() ([]coinApi.Coin, error) {
+	coinMarketData, err := coinApi.GetAllCoinData(50)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	var sortedCoinMarketData []coinApi.Coin
+	for _, v := range coinMarketData {
+		sortedCoinMarketData = append(sortedCoinMarketData, v)
+	}
+	sort.Sort(sort.Reverse(byMarketCap(sortedCoinMarketData)))
+	return sortedCoinMarketData, nil
+}
+
+func main() {
+
+	db, err := getPGConnection()
 	defer db.Close()
 
+	sortedCoins, err := getCoinsByMarketCap()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, v := range sortedCoins {
+		fmt.Println(v.ID, v.PercentChange24h)
+	}
 	// client := binance.NewClient(os.Getenv("BINANCE_API"), os.Getenv("BINANCE_SECRET"))
 
 	// res, err := client.NewGetAccountService().Do(context.Background())
